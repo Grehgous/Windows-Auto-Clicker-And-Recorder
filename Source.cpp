@@ -1,15 +1,14 @@
 /*
 TODO:
 -Input validation
--Way to go back to config step without restarting progtam
+-Way to go back to config step without restarting program
 -Save config to file
 -Show click position on screen with number in sequence
 -Remove globals
 
 
 KNOWN ISSUES:
-- ? Doesn't click until time to move to next position
--During a sleep, key presses aren't registered
+- During initial setup F keys hit the ESCAPE key catch and end the setup
 
 */
 
@@ -22,10 +21,13 @@ KNOWN ISSUES:
 #include "wtypes.h"
 #include <vector>
 #include <iterator>
+#include <conio.h>
+#include <atomic>
 
 using namespace std;
 using namespace System; 
 using namespace System::Windows::Forms;
+using namespace System::Threading;
 
 struct Click {
 	POINT point;
@@ -35,19 +37,18 @@ struct Click {
 int constSleepBetweenClicks;
 bool uniqueSleepBetweenClicks;
 vector<Click> clickList;
+std::atomic_bool Paused;
 
 void performMovementAndClick(POINT);
 void goThroughClickSequence();
 void initialSetup();
 void displayMenu();
-void mainLoop();
 void configConsole();
 void checkForKeyPress();
 
 
 
 // Moves mouse to proper location, and click
-// TODO: Take in point type
 void performMovementAndClick(POINT p) {
 
 	SetCursorPos(p.x, p.y);
@@ -58,20 +59,27 @@ void performMovementAndClick(POINT p) {
 	return;
 }
 
-// Move mouse randomly by a few pixels
+// Perform clicks and sleeps
 void goThroughClickSequence() {
 
-	int i = 0;
+	// Main loop for thread
+	while (1) {
 
-	// Perform each click and sleep
-	for (std::vector<Click>::iterator it = clickList.begin(); it != clickList.end(); ++it, i++) {
-		performMovementAndClick(clickList[i].point);
-		
-		// TODO: Next work period instead of sleep?
-		Sleep(clickList[i].sleep);
+		int i = 0;
+
+		// Perform each click and sleep
+		for (std::vector<Click>::iterator it = clickList.begin(); it != clickList.end(); ++it, i++) {
+
+			// Wait until thread is not paused to continue click sequence
+			while (Paused) {
+				Thread::Sleep(100);
+			}
+
+			performMovementAndClick(clickList[i].point);
+
+			Thread::Sleep(clickList[i].sleep);
+		}
 	}
-
-	return;
 }
 
 // Get user input required to configure program
@@ -80,59 +88,66 @@ void initialSetup() {
 	// TODO: Validate input.
 	// TODO: Default sleep time
 	// TODO: Export/import settings
-	// TODO: Remove "press any key"
+	// TODO: Error if no keys in sequence
 
 	int temp = 0;
 	char input;
 
+	// Make the console look pretty
+	configConsole();
 
-	std::cout << "Unique sleep times? (y/n): ";
+
+	std::cout << "Unique sleep times? (y/n):  ";
 	std::cin >> input;
 
 	// Ask the user for a sleep each time, or use the same
 	if (input == 'y') {
 		uniqueSleepBetweenClicks = true;
-	} else {
+	}
+	else {
 		// Sleep times are constant after each click
-		std::cout << "Constant sleep time between clicks in ms: ";
+		std::cout << "Constant sleep time between clicks in ms:  ";
 		std::cin >> constSleepBetweenClicks;
 	}
 
+	std::cout << endl;
+	std::cout << "***********************************" << endl;
+	std::cout << "* 'ENTER' to set new position     *" << endl;
+	std::cout << "* 'ESC' when done                 *" << endl;
+	std::cout << "***********************************" << endl << endl;
 
-		// Menu
-		std::cout << "***********************************" << endl;
-		std::cout << "* 'ENTER' to set mouse position   *" << endl;
-		std::cout << "* 'ESC' when done                 *" << endl;
-		std::cout << "***********************************" << endl << endl;
 
-		// Add new clicks to the sequence
-		while (GetAsyncKeyState(VK_ESCAPE) == 0) {
-			Click click;
+	// Add new clicks to the sequence
+	while (_getch()){
 
-			// Wait for next keypress
-			system("PAUSE");
+		Click click;
 
-			// Escape keypress ends adding new clicks
-			if (GetAsyncKeyState(VK_ESCAPE) != 0) {
-					return;
-			
-			} else if (GetAsyncKeyState(VK_RETURN) != 0) {		// TODO: This does not wait for enter. Works for any key
-				// Set the click position
-				GetCursorPos(&click.point);
-				std::cout << "Position set to (" << click.point.x << "," << click.point.y << ") " << endl;
+		if (GetAsyncKeyState(VK_RETURN)) {
 
-				if (uniqueSleepBetweenClicks) {
-					std::cout << "Sleep time in ms: ";
-					std::cin >> click.sleep;
+			// Set the click position
+			GetCursorPos(&click.point);
+			std::cout << "Position set to (" << click.point.x << "," << click.point.y << ") " << endl;
 
-				} else { 
-					click.sleep = constSleepBetweenClicks;
-				}
+			if (uniqueSleepBetweenClicks) {
+				std::cout << "Sleep time in ms: ";
+				std::cin >> click.sleep;
 
-				// Add to the list
-				clickList.push_back(click);
+			} 
+			else { 
+				click.sleep = constSleepBetweenClicks;
 			}
+
+			// Add to the list
+			clickList.push_back(click);
+
+		} 
+		else if (GetAsyncKeyState(VK_ESCAPE)) {
+			// Escape keypress ends adding new clicks
+			break;
 		}
+	}
+
+	displayMenu();
 
 	return;
 }
@@ -140,18 +155,32 @@ void initialSetup() {
 
 // Prints the options
 void displayMenu() {
+
+	Console::Clear();
+
 	// Menu
+	std::cout << endl;
 	std::cout << "***********************************" << endl;
-	std::cout << "* 'F9' to pause                   *" << endl;
-	std::cout << "* 'F11' to close program          *" << endl;
-	std::cout << "***********************************" << endl << endl;
+	std::cout << "* 'F9' to start/stop clicks       *" << endl;
+	std::cout << "* 'F10' to close program          *" << endl;
+	std::cout << "***********************************" << endl;
+
+	// Status
+	if (Paused) {
+		std::cout << "* Status:  PAUSED.                *" << endl;
+		std::cout << "***********************************" << endl << endl;
+	}
+	else {
+		std::cout << "* Status:  ACTIVE.                *" << endl;
+		std::cout << "***********************************" << endl << endl;
+	}
 }
 
 // Make the console loop pretty
 void configConsole() {
 
 	SetConsoleTitle("AutoClicker");											// Window title
-	Console::SetWindowSize(40, 15);											// Window size
+	Console::SetWindowSize(50, 15);											// Window size
 	SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 10);			// Font color
 	SetLayeredWindowAttributes(GetActiveWindow(), NULL, 100, LWA_ALPHA);	// Opacity 0-255
 }
@@ -159,45 +188,50 @@ void configConsole() {
 
 // See if key has been pressed
 void checkForKeyPress() {
+	std::cout << "Thread started" << endl;
 
-	if (GetAsyncKeyState(VK_F11)) {
-		std::cout << "Exit triggered" << endl;
-		exit(0);
-	}
-
-	// Pause when F9 is Pressed
-	if (GetAsyncKeyState(VK_F9)) {
-		std::cout << "Paused. Press enter to continue" << endl;
-		system("PAUSE");
-		std::cout << "Continued." << endl;
-	}
-}
-
-// Drives the program
-void mainLoop() {
-	// Loop until user chooses to exit
+	// Main loop for thread
 	while (1) {
 
-		checkForKeyPress();
+		// Kill program
+		if (GetAsyncKeyState(VK_F10)) {
+			exit(0);
+		}
 
-		goThroughClickSequence();
+		// Change the Pause state and update menu
+		if (GetAsyncKeyState(VK_F9)) {
+			if (!Paused) {
+				Paused = true;
+				displayMenu();
+
+			}
+			else if (Paused) {
+				Paused = false;
+				displayMenu();
+			}
+		}
+		
+		Thread::Sleep(100);
 	}
 }
 
-
-int main()
-{
-	// Make the console look pretty
-	configConsole();
+int main(){
 
 	// Take user through initial setup options
 	initialSetup();
-	
-	// Menu
-	displayMenu();
 
-	// Loop until user chooses to exit
-	mainLoop();
+	// This thread loops checking for relevant key presses
+	Thread^ th1 = gcnew Thread(gcnew ThreadStart(&checkForKeyPress));
+
+	// This thread repeats the click sequence
+	Thread^ th2 = gcnew Thread(gcnew ThreadStart(&goThroughClickSequence));
+
+	th1->Start();
+	th2->Start();
+
+	// Wait for the threads to finish.
+	th1->Join();
+	th2->Join();
 
 	exit(0);
 }
