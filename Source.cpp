@@ -9,6 +9,7 @@ TODO:
 
 KNOWN ISSUES:
 - During initial setup F keys hit the ESCAPE key catch and end the setup
+- Unique sleep times escape does not work
 
 */
 
@@ -28,6 +29,7 @@ using namespace std;
 using namespace System; 
 using namespace System::Windows::Forms;
 using namespace System::Threading;
+using namespace System::Drawing;
 
 struct Click {
 	POINT point;
@@ -38,6 +40,7 @@ int constSleepBetweenClicks;
 bool uniqueSleepBetweenClicks;
 vector<Click> clickList;
 std::atomic_bool Paused;
+std::atomic_bool Reset;
 
 void performMovementAndClick(POINT);
 void goThroughClickSequence();
@@ -70,8 +73,15 @@ void goThroughClickSequence() {
 		// Perform each click and sleep
 		for (std::vector<Click>::iterator it = clickList.begin(); it != clickList.end(); ++it, i++) {
 
+			// Continuously check for signal to kill the thread
+			if (Reset) return;
+
 			// Wait until thread is not paused to continue click sequence
 			while (Paused) {
+				// Continuously check for signal to kill the thread
+				if (Reset) return;
+
+				// Sleep
 				Thread::Sleep(100);
 			}
 
@@ -86,17 +96,17 @@ void goThroughClickSequence() {
 void initialSetup() {
 	
 	// TODO: Validate input.
-	// TODO: Default sleep time
-	// TODO: Export/import settings
 	// TODO: Error if no keys in sequence
 
+	// Reset values
 	int temp = 0;
 	char input;
 
-	// Make the console look pretty
-	configConsole();
+	clickList.clear();
+	//Paused = true;
+	Reset = false;
 
-
+	
 	std::cout << "Unique sleep times? (y/n):  ";
 	std::cin >> input;
 
@@ -106,13 +116,14 @@ void initialSetup() {
 	}
 	else {
 		// Sleep times are constant after each click
+		uniqueSleepBetweenClicks = false;
 		std::cout << "Constant sleep time between clicks in ms:  ";
 		std::cin >> constSleepBetweenClicks;
 	}
 
 	std::cout << endl;
 	std::cout << "***********************************" << endl;
-	std::cout << "* 'ENTER' to set new position     *" << endl;
+	std::cout << "* 'SPACE' to set new position     *" << endl;
 	std::cout << "* 'ESC' when done                 *" << endl;
 	std::cout << "***********************************" << endl << endl;
 
@@ -122,7 +133,12 @@ void initialSetup() {
 
 		Click click;
 
-		if (GetAsyncKeyState(VK_RETURN)) {
+		if (GetAsyncKeyState(VK_ESCAPE)) {
+			// Escape keypress ends adding new clicks
+			Paused = false;
+			break;
+		}
+		else if (GetAsyncKeyState(VK_SPACE)) {
 
 			// Set the click position
 			GetCursorPos(&click.point);
@@ -131,27 +147,20 @@ void initialSetup() {
 			if (uniqueSleepBetweenClicks) {
 				std::cout << "Sleep time in ms: ";
 				std::cin >> click.sleep;
-
-			} 
-			else { 
+			} else { 
 				click.sleep = constSleepBetweenClicks;
 			}
 
 			// Add to the list
 			clickList.push_back(click);
-
 		} 
-		else if (GetAsyncKeyState(VK_ESCAPE)) {
-			// Escape keypress ends adding new clicks
-			break;
-		}
 	}
 
 	displayMenu();
+	Sleep(100);
 
 	return;
 }
-
 
 // Prints the options
 void displayMenu() {
@@ -161,8 +170,9 @@ void displayMenu() {
 	// Menu
 	std::cout << endl;
 	std::cout << "***********************************" << endl;
-	std::cout << "* 'F9' to start/stop clicks       *" << endl;
+	std::cout << "* 'F9' to toggle pause            *" << endl;
 	std::cout << "* 'F10' to close program          *" << endl;
+	std::cout << "* 'F12' to restart setup          *" << endl;
 	std::cout << "***********************************" << endl;
 
 	// Status
@@ -185,53 +195,52 @@ void configConsole() {
 	SetLayeredWindowAttributes(GetActiveWindow(), NULL, 100, LWA_ALPHA);	// Opacity 0-255
 }
 
-
 // See if key has been pressed
 void checkForKeyPress() {
-	std::cout << "Thread started" << endl;
 
-	// Main loop for thread
 	while (1) {
 
-		// Kill program
 		if (GetAsyncKeyState(VK_F10)) {
+			// Kill the program
 			exit(0);
-		}
-
-		// Change the Pause state and update menu
-		if (GetAsyncKeyState(VK_F9)) {
-			if (!Paused) {
-				Paused = true;
-				displayMenu();
-
-			}
-			else if (Paused) {
-				Paused = false;
-				displayMenu();
-			}
+		} else if (GetAsyncKeyState(VK_F9)) {
+			// Toggle whether the clicking is paused
+			Paused = !Paused;
+			displayMenu();
+		} else if (GetAsyncKeyState(VK_F12)) {
+			// Set atomic flag so other threads know to end
+			// and close this thread.
+			Reset = true;
+			return;
 		}
 		
 		Thread::Sleep(100);
 	}
 }
 
+
 int main(){
 
-	// Take user through initial setup options
-	initialSetup();
 
-	// This thread loops checking for relevant key presses
-	Thread^ th1 = gcnew Thread(gcnew ThreadStart(&checkForKeyPress));
+	// Make the console look pretty
+	configConsole();
 
-	// This thread repeats the click sequence
-	Thread^ th2 = gcnew Thread(gcnew ThreadStart(&goThroughClickSequence));
+	// Loop allows for resetting the config when the threads are ended
+	while (1) {
+		// Take user through initial setup options
+		initialSetup();
 
-	th1->Start();
-	th2->Start();
+		// This thread loops checking for relevant key presses
+		Thread^ th1 = gcnew Thread(gcnew ThreadStart(&checkForKeyPress));
 
-	// Wait for the threads to finish.
-	th1->Join();
-	th2->Join();
+		// This thread repeats the click sequence
+		Thread^ th2 = gcnew Thread(gcnew ThreadStart(&goThroughClickSequence));
 
-	exit(0);
+		th1->Start();
+		th2->Start();
+
+		// Wait for the threads to finish.
+		th1->Join();
+		th2->Join();
+	}
 }
