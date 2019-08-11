@@ -8,8 +8,8 @@ TODO:
 
 
 KNOWN ISSUES:
-- During initial setup F keys hit the ESCAPE key catch and end the setup
-- Unique sleep times escape does not work
+- Moves mouse, waits, then clicks. Should move, click, then wait.
+  Basically does sleep before instead of sleep after.
 
 */
 
@@ -56,8 +56,10 @@ void performMovementAndClick(POINT p) {
 
 	SetCursorPos(p.x, p.y);
 
+	// TODO: Use send input?
 	mouse_event(MOUSEEVENTF_LEFTDOWN, p.x, p.y, 0, 0);	// Mouse click
 	mouse_event(MOUSEEVENTF_LEFTUP, p.x, p.y, 0, 0);	// Mouse release
+	std::cout << "Clicked (" << p.x << ", " << p.y << ")" << endl;
 
 	return;
 }
@@ -85,8 +87,11 @@ void goThroughClickSequence() {
 				Thread::Sleep(100);
 			}
 
+			std::cout << i << ": ";
 			performMovementAndClick(clickList[i].point);
 
+			// TODO: PROBLEM: Sleeps before click is finished
+			std::cout << i << ": Sleep(" << clickList[i].sleep << ")" <<  endl;
 			Thread::Sleep(clickList[i].sleep);
 		}
 	}
@@ -165,7 +170,7 @@ void initialSetup() {
 // Prints the options
 void displayMenu() {
 
-	Console::Clear();
+	// Console::Clear();
 
 	// Menu
 	std::cout << endl;
@@ -220,7 +225,6 @@ void checkForKeyPress() {
 
 
 int main(){
-
 
 	// Make the console look pretty
 	configConsole();
