@@ -1,18 +1,3 @@
-/*
-TODO:
--Input validation
--Way to go back to config step without restarting program
--Save config to file
--Show click position on screen with number in sequence
--Remove globals
-
-
-KNOWN ISSUES:
-- Moves mouse, waits, then clicks. Should move, click, then wait.
-  Basically does sleep before instead of sleep after.
-
-*/
-
 #include <iostream>
 #include <windows.h>
 #include <stdlib.h>
@@ -48,18 +33,47 @@ void initialSetup();
 void displayMenu();
 void configConsole();
 void checkForKeyPress();
+void moveMouse(size_t x, size_t y);
+void leftClick();
 
+void leftClick() {
 
+	// Left down
+	INPUT Input = { 0 };
+	Input.type = INPUT_MOUSE;
+	Input.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+	::SendInput(1, &Input, sizeof(INPUT));
+
+	// Left up
+	Input = { 0 };
+	::ZeroMemory(&Input, sizeof(INPUT));
+	Input.type = INPUT_MOUSE;
+	Input.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+	::SendInput(1, &Input, sizeof(INPUT));
+}
+
+void moveMouse(size_t x, size_t y) {
+
+	double dx = x * (65535.0f / (::GetSystemMetrics(SM_CXSCREEN) - 1));
+	double dy = y * (65535.0f / (::GetSystemMetrics(SM_CYSCREEN) - 1));
+
+	INPUT Input = { 0 };
+
+	Input.type = INPUT_MOUSE;
+	Input.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+	Input.mi.dx = LONG(dx);
+	Input.mi.dy = LONG(dy);
+
+	::SendInput(1, &Input, sizeof(INPUT));
+
+	return;
+}
 
 // Moves mouse to proper location, and click
 void performMovementAndClick(POINT p) {
 
-	SetCursorPos(p.x, p.y);
-
-	// TODO: Use send input?
-	mouse_event(MOUSEEVENTF_LEFTDOWN, p.x, p.y, 0, 0);	// Mouse click
-	mouse_event(MOUSEEVENTF_LEFTUP, p.x, p.y, 0, 0);	// Mouse release
-	std::cout << "Clicked (" << p.x << ", " << p.y << ")" << endl;
+	moveMouse(p.x, p.y);
+	leftClick();
 
 	return;
 }
@@ -87,11 +101,12 @@ void goThroughClickSequence() {
 				Thread::Sleep(100);
 			}
 
-			std::cout << i << ": ";
+
 			performMovementAndClick(clickList[i].point);
 
-			// TODO: PROBLEM: Sleeps before click is finished
-			std::cout << i << ": Sleep(" << clickList[i].sleep << ")" <<  endl;
+			std::cout << i << ": Clicked (" << clickList[i].point.x << ", " << clickList[i].point.y << "): "
+				<< "Sleeping(" << clickList[i].sleep << "ms)" <<  endl;
+
 			Thread::Sleep(clickList[i].sleep);
 		}
 	}
